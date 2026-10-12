@@ -139,7 +139,70 @@ audit, nginx and Apache logs, whichever exist) and new processes, and it also ta
 The console listens on 127.0.0.1 by default. Set `VIGIL_BIND=0.0.0.0` and `VIGIL_PUBLIC_URL` in `.env` to reach it from
 other machines.
 
-### Monitoring other servers
+### Opening the console
+
+1. Open https://localhost:8443 in Chrome, Edge or Firefox.
+2. The browser warns that the connection is not private, because the certificate is self-signed. Click
+   **Advanced**, then **Continue to localhost**.
+3. Log in as `admin` with the password `vigil.sh up` printed. It is also in `.env` as `VIGIL_ADMIN_PASSWORD`.
+4. Run `./vigil.sh demo` and watch alerts arrive. Good places to start: **Incidents** → *Brute-Forced Account
+   Escalated to Root*, **Alerts** → *Anomalous Login (UEBA)*, **ATT&CK**, **Hunt**.
+
+If the page does not load, run `./vigil.sh status` and `./vigil.sh logs`.
+
+### Running on Windows
+
+Vigil runs on Windows through Docker Desktop and WSL 2 (Ubuntu).
+
+1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and keep **Use WSL 2** ticked. If Ubuntu
+   is not installed, run `wsl --install` in an Administrator PowerShell and restart.
+2. In Docker Desktop open **Settings → Resources → WSL integration**, switch on **Ubuntu**, then **Apply & restart**.
+   Without this step Ubuntu reports `The command 'docker' could not be found in this WSL 2 distro`.
+3. Open a new Ubuntu window and go to the folder you unzipped. Windows drives are under `/mnt`, so
+   `D:\PROJECTS\vigil` is `/mnt/d/PROJECTS/vigil`:
+
+   ```bash
+   cd /mnt/d/PROJECTS/vigil
+   docker version          # should show a "Server" section
+   bash vigil.sh up
+   ```
+
+   Using `bash vigil.sh` works even if Windows dropped the executable bit. If you see an error mentioning `\r`,
+   run `sed -i 's/\r$//' vigil.sh` once and try again.
+4. Open https://localhost:8443 in your Windows browser (see *Opening the console* above), then run
+   `bash vigil.sh demo`.
+
+On Windows, the bundled `agent` container sees Docker's Linux VM, not Windows itself. To monitor the Windows
+machine, also run the agent natively as described next.
+
+### Monitoring a Windows machine
+
+The agent reads the Security, System, Sysmon and PowerShell event logs with `wevtutil`. Keep Vigil running, then:
+
+1. Install Python 3 from [python.org](https://www.python.org/downloads/) and tick **Add python.exe to PATH**.
+2. Copy the value of `VIGIL_ENROLLMENT_TOKEN` from the `.env` file (Notepad is fine).
+3. Open **Terminal (Admin)** or PowerShell as Administrator. Reading the Security log needs admin rights.
+4. Run, replacing the path and token with yours:
+
+   ```powershell
+   cd D:\PROJECTS\vigil\agent
+   curl.exe -k -o vigil-ca.crt https://localhost:8443/agent/ca.crt
+   $env:VIGIL_SERVER="https://localhost:8443"
+   $env:VIGIL_CA_FILE="D:\PROJECTS\vigil\agent\vigil-ca.crt"
+   $env:VIGIL_ENROLL_TOKEN="PASTE_TOKEN_HERE"
+   python vigil_agent.py
+   ```
+
+   It prints `enrolled as agt_…` and `running on <your PC name>`. Leave the window open; Ctrl+C stops it.
+5. Your PC appears on the **Agents** page. To test, lock the PC (Win+L), enter a wrong password a few times, log
+   back in, then search **Hunt** for `event.action:logon_failed`. Ten or more failures within five minutes also
+   raise a *Windows Logon Brute Force* alert.
+
+The agent ships new events from the moment it starts, not older history. Installing
+[Sysmon](https://learn.microsoft.com/sysinternals/downloads/sysmon) adds process-creation events, which enables the
+SigmaHQ Windows process rules.
+
+### Monitoring other Linux servers
 
 Open **Agents** in the console, copy the install command and run it on the server you want to monitor:
 
@@ -151,8 +214,6 @@ curl -fsSLk https://siem.example:8443/agent/install.sh | sudo VIGIL_SERVER=https
 The installer downloads the server certificate, refuses to continue unless its SHA-256 matches the fingerprint shown
 in the console, pins it, and installs the agent as a hardened systemd service. The agent needs only Python 3.8+.
 
-**Windows:** run `python vigil_agent.py` with `VIGIL_SERVER`, `VIGIL_ENROLL_TOKEN` and `VIGIL_CA_FILE` set. It collects
-Security, System, Sysmon and PowerShell logs through `wevtutil`.
 **Network devices:** send syslog to port 5514 (UDP or TCP).
 
 ### Configuration
@@ -245,7 +306,8 @@ Verified while building it:
 
 Not exercised here:
 
-* The Windows Event Log reader was tested with recorded XML events, not on a live Windows host.
+* The Windows Event Log reader was tested with recorded XML events, not on a live Windows host. The Windows steps
+  above are written from the code, not from a run on a Windows PC.
 * The journald reader was not run under a real systemd journal.
 * Email, Slack and Telegram delivery was not sent to real services.
 

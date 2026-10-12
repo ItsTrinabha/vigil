@@ -1,0 +1,62 @@
+# Vigil SIEM: `./vigil.sh up` generates .env with fresh secrets and runs this.
+name: vigil
+
+x-python-image: &pyimg
+  PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim}
+
+services:
+  server:
+    build: { context: ., dockerfile: server/Dockerfile, args: *pyimg }
+    image: vigil-server:1.0.0
+    container_name: vigil-server
+    hostname: vigil-server
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      VIGIL_DATA_DIR: /data
+      VIGIL_PUBLIC_URL: ${VIGIL_PUBLIC_URL:-https://localhost:8443}
+    ports:
+      - "${VIGIL_BIND:-127.0.0.1}:8443:8443"
+      - "${VIGIL_BIND:-127.0.0.1}:5514:5514/udp"
+      - "${VIGIL_BIND:-127.0.0.1}:5514:5514/tcp"
+    volumes:
+      - vigil-data:/data
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+
+  # Collects this Docker host's logs (/var/log, read-only) and processes,
+  # plus ./lab/logs which `./vigil.sh demo` fills with sample activity.
+  agent:
+    build: { context: ., dockerfile: agent/Dockerfile, args: *pyimg }
+    image: vigil-agent:1.0.0
+    container_name: vigil-agent
+    restart: unless-stopped
+    depends_on:
+      server: { condition: service_healthy }
+    pid: host
+    cap_drop: [ALL]
+    cap_add: [DAC_READ_SEARCH, SYS_PTRACE]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      VIGIL_SERVER: https://vigil-server:8443
+      VIGIL_ENROLL_TOKEN: ${VIGIL_ENROLLMENT_TOKEN}
+      VIGIL_CA_FILE: /vigil-data/tls/vigil.crt
+      VIGIL_HOSTNAME: ${VIGIL_AGENT_HOSTNAME:-docker-host}
+      VIGIL_JOURNALD: "false"
+      VIGIL_PROCESSES: ${VIGIL_AGENT_PROCESSES:-true}
+      VIGIL_FILES: >-
+        /host/var/log/auth.log, /host/var/log/secure, /host/var/log/syslog:syslog, /host/var/log/messages:syslog,
+        /host/var/log/ufw.log, /host/var/log/audit/audit.log:auditd,
+        /host/var/log/nginx/*access*.log:web, /host/var/log/apache2/*access*.log:web,
+        /lab/auth.log, /lab/syslog:syslog, /lab/access.log:web
+    volumes:
+      - vigil-data:/vigil-data:ro
+      - agent-state:/state
+      - /var/log:/host/var/log:ro
+      - ./lab/logs:/lab
+
+volumes:
+  vigil-data:
+  agent-state:

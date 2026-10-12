@@ -1,0 +1,26 @@
+[project]
+name = "vigil-siem"
+version = "1.0.0"
+description = "Self-hosted SIEM: log agent, Sigma + correlation detection, ATT&CK mapping, UEBA and an analyst console"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 180
+target-version = "py311"
+extend-exclude = ["server/rules"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "I", "UP", "SIM", "RUF"]
+# B008: FastAPI's Depends() in argument defaults is the framework idiom.
+# B019: GeoIP is a process-wide singleton, so caching its lookups on the method is intended.
+# SIM105/SIM115: explicit try/except and long-lived tail file handles read better here.
+# RUF001/RUF003: ambiguous unicode in user-facing strings (± etc.) is intended.
+ignore = ["B008", "B019", "SIM105", "SIM108", "SIM115", "RUF001", "RUF003", "RUF012"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["vigil", "vigil_agent", "conftest"]

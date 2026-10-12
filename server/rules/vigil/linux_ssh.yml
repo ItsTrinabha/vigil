@@ -1,0 +1,171 @@
+# Vigil SSH detections: base rules plus Sigma v2 correlation rules.
+# Base rules referenced only by correlations are "building blocks": they feed
+# the correlation engine but do not raise alerts on their own.
+title: SSH Authentication Failure
+id: 6318bae5-d145-45a7-8cb7-8b433bb9c520
+name: vigil_ssh_auth_failure
+status: stable
+description: A single failed SSH authentication attempt (password or public key).
+author: Vigil
+tags:
+    - attack.credential-access
+    - attack.t1110
+logsource:
+    product: linux
+    service: sshd
+detection:
+    selection:
+        event.action: ssh_login_failed
+    condition: selection
+level: low
+---
+title: SSH Successful Login
+id: 90ed4095-843a-43ef-b1e1-c24cfb229df3
+name: vigil_ssh_login_success
+status: stable
+description: A successful SSH login.
+author: Vigil
+tags:
+    - attack.initial-access
+    - attack.t1078
+logsource:
+    product: linux
+    service: sshd
+detection:
+    selection:
+        event.action: ssh_login_success
+    condition: selection
+level: informational
+---
+title: SSH Brute Force
+id: 0a390073-2324-4ab4-936c-00d5a82efeed
+name: vigil_ssh_bruteforce
+status: stable
+description: |
+    One source IP failed SSH authentication 10 or more times against the same host within 5 minutes.
+author: Vigil
+tags:
+    - attack.credential-access
+    - attack.t1110.001
+correlation:
+    type: event_count
+    rules:
+        - vigil_ssh_auth_failure
+    group-by:
+        - source.ip
+        - host.name
+    timespan: 5m
+    condition:
+        gte: 10
+falsepositives:
+    - A user or script with a wrong saved password
+level: medium
+---
+title: SSH Password Spraying
+id: ddf063e1-a4e7-46fc-986e-2e62791f0c45
+name: vigil_ssh_password_spray
+status: stable
+description: One source IP tried 5 or more different usernames over SSH within 10 minutes.
+author: Vigil
+tags:
+    - attack.credential-access
+    - attack.t1110.003
+correlation:
+    type: value_count
+    rules:
+        - vigil_ssh_auth_failure
+    group-by:
+        - source.ip
+    timespan: 10m
+    condition:
+        field: user.name
+        gte: 5
+level: medium
+---
+title: Distributed SSH Brute Force Against One Account
+id: cccddb06-773e-45fc-971a-27652d5ee011
+name: vigil_ssh_distributed_bruteforce
+status: stable
+description: Five or more different source IPs failed to log in as the same user on the same host within 15 minutes.
+author: Vigil
+tags:
+    - attack.credential-access
+    - attack.t1110
+correlation:
+    type: value_count
+    rules:
+        - vigil_ssh_auth_failure
+    group-by:
+        - user.name
+        - host.name
+    timespan: 15m
+    condition:
+        field: source.ip
+        gte: 5
+level: medium
+---
+title: Successful SSH Login After Brute Force
+id: 42b9b09c-ff57-4946-8ea5-d0ed4f3e222f
+name: vigil_ssh_bruteforce_success
+status: stable
+description: |
+    A source IP that was brute forcing SSH then logged in successfully. The
+    credentials it guessed are probably valid; treat the account as compromised.
+author: Vigil
+tags:
+    - attack.credential-access
+    - attack.initial-access
+    - attack.t1110
+    - attack.t1078
+correlation:
+    type: temporal_ordered
+    rules:
+        - vigil_ssh_bruteforce
+        - vigil_ssh_login_success
+    group-by:
+        - source.ip
+    timespan: 30m
+level: high
+---
+title: Brute-Forced Account Escalated to Root
+id: ff35b53b-ff3d-4284-b5be-cc2c176d846f
+name: vigil_bruteforce_to_root
+status: stable
+description: |
+    Full attack chain on one host: SSH brute force, a successful login, then the
+    same account running commands as root through sudo within 30 minutes.
+author: Vigil
+tags:
+    - attack.privilege-escalation
+    - attack.t1548.003
+    - attack.t1078
+correlation:
+    type: temporal_ordered
+    rules:
+        - vigil_ssh_bruteforce_success
+        - vigil_sudo_as_root
+    group-by:
+        - host.name
+        - user.name
+    timespan: 30m
+level: critical
+---
+title: SSH Login as Root
+id: ac5b7540-6660-4971-9a0c-df987407d8ce
+status: stable
+description: Direct root login over SSH. Most hardening baselines disable PermitRootLogin.
+author: Vigil
+tags:
+    - attack.initial-access
+    - attack.t1078.003
+logsource:
+    product: linux
+    service: sshd
+detection:
+    selection:
+        event.action: ssh_login_success
+        user.name: root
+    condition: selection
+falsepositives:
+    - Hosts where root login is intentionally allowed
+level: medium

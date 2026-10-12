@@ -1,0 +1,224 @@
+title: Web Request Not Found
+id: b3d1c344-3c26-46ca-8b6c-431141fd0102
+name: vigil_web_404
+status: stable
+description: HTTP 404 response. Building block for scan detection.
+author: Vigil
+logsource:
+    category: webserver
+detection:
+    selection:
+        sc-status: 404
+    condition: selection
+level: informational
+---
+title: Web Content Discovery Scan
+id: 5e133211-79f7-449e-83a0-b887fe2d84ff
+status: stable
+description: One client received 30 or more 404 responses within 2 minutes, typical of directory brute forcing (gobuster, dirb, ffuf) or vulnerability scanners.
+author: Vigil
+tags:
+    - attack.reconnaissance
+    - attack.t1595.003
+correlation:
+    type: event_count
+    rules:
+        - vigil_web_404
+    group-by:
+        - source.ip
+        - host.name
+    timespan: 2m
+    condition:
+        gte: 30
+falsepositives:
+    - Broken links on a busy page
+level: medium
+---
+title: Known Vulnerability Scanner User Agent
+id: ca98a50e-9673-496e-bfcf-ef2ed8a61d0c
+status: stable
+description: The request's User-Agent belongs to a well known offensive scanning tool.
+author: Vigil
+tags:
+    - attack.reconnaissance
+    - attack.t1595.002
+logsource:
+    category: webserver
+detection:
+    selection:
+        cs-user-agent|contains:
+            - 'sqlmap'
+            - 'nikto'
+            - 'nuclei'
+            - 'masscan'
+            - 'zgrab'
+            - 'gobuster'
+            - 'dirbuster'
+            - 'wpscan'
+            - 'feroxbuster'
+            - 'ffuf'
+            - 'Nmap Scripting Engine'
+            - 'acunetix'
+            - 'netsparker'
+            - 'WhatWeb'
+            - 'jaeles'
+    condition: selection
+falsepositives:
+    - Your own authorised vulnerability scans
+level: medium
+---
+title: Path Traversal Attempt in URL
+id: 07f4ef53-2623-4253-a1c1-5e58e6f5ef55
+status: stable
+description: The request URL contains directory traversal sequences aimed at reading files outside the web root.
+author: Vigil
+tags:
+    - attack.initial-access
+    - attack.t1190
+logsource:
+    category: webserver
+detection:
+    selection:
+        cs-uri-query|contains:
+            - '../'
+            - '..\'
+            - '%2e%2e%2f'
+            - '%2e%2e/'
+            - '..%2f'
+            - '..%5c'
+            - '%252e%252e'
+    sensitive:
+        cs-uri-query|contains:
+            - 'etc/passwd'
+            - 'etc/shadow'
+            - 'win.ini'
+            - 'boot.ini'
+            - 'proc/self'
+    condition: selection or sensitive
+level: high
+---
+title: SQL Injection Pattern in URL
+id: ba162a29-57c7-4dcd-89fc-70bc3d21ad3b
+status: stable
+description: The request URL contains common SQL injection syntax.
+author: Vigil
+tags:
+    - attack.initial-access
+    - attack.t1190
+logsource:
+    category: webserver
+detection:
+    selection:
+        cs-uri-query|contains:
+            - 'union select'
+            - 'union all select'
+            - "' or '1'='1"
+            - "' or 1=1"
+            - '" or "1"="1'
+            - 'information_schema'
+            - 'sleep('
+            - 'benchmark('
+            - 'waitfor delay'
+            - 'pg_sleep'
+            - '@@version'
+    condition: selection
+level: high
+---
+title: Probe for Exposed Secrets or Config Files
+id: 7b9e701e-c682-4609-8292-6dde1a72591f
+status: stable
+description: Request for files that leak credentials when exposed on a web server (.env, .git, backups, cloud credential files).
+author: Vigil
+tags:
+    - attack.reconnaissance
+    - attack.credential-access
+    - attack.t1595.003
+    - attack.t1552.001
+logsource:
+    category: webserver
+detection:
+    selection:
+        cs-uri-stem|endswith:
+            - '/.env'
+            - '/.git/config'
+            - '/.git/HEAD'
+            - '/.aws/credentials'
+            - '/wp-config.php.bak'
+            - '/wp-config.php~'
+            - '/config.php.bak'
+            - '/.htpasswd'
+            - '/id_rsa'
+            - '/.DS_Store'
+            - '/backup.sql'
+            - '/dump.sql'
+            - '/phpinfo.php'
+            - '/server-status'
+            - '/actuator/env'
+    condition: selection
+level: low
+---
+title: Exposed Secret File Served Successfully
+id: 3d558a1c-c1c2-44c7-8377-ee37dbbc7dcc
+status: stable
+description: A file that typically holds secrets (.env, .git/config, credentials, SQL dumps) was served with HTTP 200. The secrets in it should be considered leaked.
+author: Vigil
+tags:
+    - attack.credential-access
+    - attack.t1552.001
+logsource:
+    category: webserver
+detection:
+    selection:
+        cs-uri-stem|endswith:
+            - '/.env'
+            - '/.git/config'
+            - '/.aws/credentials'
+            - '/wp-config.php.bak'
+            - '/.htpasswd'
+            - '/id_rsa'
+            - '/backup.sql'
+            - '/dump.sql'
+        sc-status: 200
+    condition: selection
+level: critical
+---
+title: Web Server Process Spawned a Shell
+id: 8f21ed68-eb66-4114-b89a-2ab797c95a3d
+status: stable
+description: A web server or application runtime started a shell or recon tool. This is the classic sign of a web shell or remote code execution.
+author: Vigil
+tags:
+    - attack.persistence
+    - attack.execution
+    - attack.t1505.003
+    - attack.t1059.004
+logsource:
+    product: linux
+    category: process_creation
+detection:
+    parent_any:
+        ParentImage|endswith:
+            - '/nginx'
+            - '/apache2'
+            - '/httpd'
+            - '/lighttpd'
+            - '/caddy'
+    parent_php:
+        ParentImage|re: '/php-fpm[0-9.]*$'
+    child:
+        Image|endswith:
+            - '/sh'
+            - '/bash'
+            - '/dash'
+            - '/zsh'
+            - '/whoami'
+            - '/id'
+            - '/uname'
+            - '/curl'
+            - '/wget'
+            - '/nc'
+            - '/ncat'
+            - '/python3'
+            - '/perl'
+    condition: (parent_any or parent_php) and child
+level: high

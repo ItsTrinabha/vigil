@@ -1,0 +1,69 @@
+title: Firewall Blocked Connection
+id: 0103d3c4-226f-4c72-8d96-b0b31a376afc
+name: vigil_fw_block
+status: stable
+description: The host firewall (UFW / iptables / nftables log target) dropped an inbound packet. Building block for scan detection.
+author: Vigil
+logsource:
+    product: linux
+detection:
+    selection:
+        event.action: firewall_block
+    condition: selection
+level: informational
+---
+title: Port Scan Against Host
+id: 3ed7cce3-a6b5-4307-ba0b-25188e607816
+status: stable
+description: One source hit 15 or more distinct blocked destination ports on a host within 1 minute.
+author: Vigil
+tags:
+    - attack.discovery
+    - attack.t1046
+correlation:
+    type: value_count
+    rules:
+        - vigil_fw_block
+    group-by:
+        - source.ip
+        - host.name
+    timespan: 1m
+    condition:
+        field: destination.port
+        gte: 15
+level: medium
+---
+title: Windows Logon Failure
+id: 0a159e85-3f08-48ce-82c9-01f60a28f775
+name: vigil_win_logon_failure
+status: stable
+description: A failed Windows logon (Security 4625). Building block for brute force detection.
+author: Vigil
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID: 4625
+    condition: selection
+level: informational
+---
+title: Windows Logon Brute Force
+id: 6f2a4b52-7d0b-4a8e-9a77-0b8f2f3f6c11
+status: stable
+description: Ten or more failed Windows logons from one source address within 5 minutes (RDP, SMB or WinRM password guessing).
+author: Vigil
+tags:
+    - attack.credential-access
+    - attack.t1110.001
+correlation:
+    type: event_count
+    rules:
+        - vigil_win_logon_failure
+    group-by:
+        - IpAddress
+        - host.name
+    timespan: 5m
+    condition:
+        gte: 10
+level: medium

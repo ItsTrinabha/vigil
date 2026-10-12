@@ -1,0 +1,230 @@
+title: Sudo Command Run as Root
+id: a39a02ca-6438-4518-b804-90d63b308666
+name: vigil_sudo_as_root
+status: stable
+description: A user ran a command as root through sudo. Building block for attack-chain correlations.
+author: Vigil
+tags:
+    - attack.privilege-escalation
+    - attack.t1548.003
+logsource:
+    product: linux
+    service: sudo
+detection:
+    selection:
+        event.action: sudo_command
+        user.target.name: root
+    condition: selection
+level: informational
+---
+title: Root Shell Opened Through Sudo
+id: 25bcc91b-ecf9-485c-a283-eda65441f21c
+status: stable
+description: An interactive root shell was started with sudo (sudo -i, sudo su, sudo bash ...).
+author: Vigil
+tags:
+    - attack.privilege-escalation
+    - attack.t1548.003
+logsource:
+    product: linux
+    service: sudo
+detection:
+    selection:
+        event.action: sudo_command
+        user.target.name: root
+    shell:
+        process.command_line|endswith:
+            - '/bash'
+            - '/sh'
+            - '/zsh'
+            - '/dash'
+            - '/su'
+            - '/su -'
+            - '/bash -i'
+            - '/bash -l'
+            - '/sh -i'
+    condition: selection and shell
+falsepositives:
+    - Administrators who routinely work in a root shell
+level: low
+---
+title: Sudo Attempt by User Not in Sudoers
+id: c30beee9-d035-494e-8d28-ef4e6c0c8785
+status: stable
+description: A user who has no sudo rights tried to run a command as another user.
+author: Vigil
+tags:
+    - attack.privilege-escalation
+    - attack.t1548.003
+logsource:
+    product: linux
+    service: sudo
+detection:
+    selection:
+        event.action: sudo_not_allowed
+    condition: selection
+level: medium
+---
+title: Sudo Password Failure
+id: c3032d51-9c04-4afc-9e64-1097e26e6796
+name: vigil_sudo_auth_failure
+status: stable
+description: Wrong password entered at a sudo prompt (one event per attempt, from pam_unix).
+author: Vigil
+tags:
+    - attack.credential-access
+    - attack.t1110
+logsource:
+    product: linux
+    service: sudo
+detection:
+    selection:
+        event.action: sudo_auth_failure
+    condition: selection
+level: informational
+---
+title: Repeated Sudo Password Failures
+id: 03790a2a-3ec1-47a5-82b8-354f6b99730d
+status: stable
+description: The same account failed sudo authentication 3 or more times within 10 minutes, which can mean someone is guessing the password of a session they took over.
+author: Vigil
+tags:
+    - attack.credential-access
+    - attack.privilege-escalation
+    - attack.t1110
+    - attack.t1548.003
+correlation:
+    type: event_count
+    rules:
+        - vigil_sudo_auth_failure
+    group-by:
+        - user.name
+        - host.name
+    timespan: 10m
+    condition:
+        gte: 3
+level: medium
+---
+title: Sensitive Credential File Read via Sudo
+id: bf101cb3-cc48-4401-b6b2-64a71e145a00
+status: stable
+description: A sudo command referenced the shadow password file or SSH host keys.
+author: Vigil
+tags:
+    - attack.credential-access
+    - attack.t1003.008
+logsource:
+    product: linux
+    service: sudo
+detection:
+    selection:
+        event.action: sudo_command
+        process.command_line|contains:
+            - '/etc/shadow'
+            - '/etc/gshadow'
+            - '/etc/ssh/ssh_host_'
+            - '/etc/sudoers'
+    condition: selection
+falsepositives:
+    - Administrators editing sudoers with visudo
+level: medium
+---
+title: New User Created With Root UID
+id: d3da4c74-ffb7-4c14-81a4-a2ecb4e63bc7
+status: stable
+description: A new account was created with UID 0, giving it full root privileges under a different name. This is a common persistence backdoor.
+author: Vigil
+tags:
+    - attack.persistence
+    - attack.privilege-escalation
+    - attack.t1136.001
+logsource:
+    product: linux
+detection:
+    selection:
+        event.action: user_created
+        user.target.id: 0
+    condition: selection
+level: critical
+---
+title: Local User Account Created
+id: dcfc8a00-7244-44e1-885c-03da3aed5f43
+status: stable
+description: A new local account was created.
+author: Vigil
+tags:
+    - attack.persistence
+    - attack.t1136.001
+logsource:
+    product: linux
+detection:
+    selection:
+        event.action: user_created
+    filter_root:
+        user.target.id: 0
+    condition: selection and not filter_root
+falsepositives:
+    - Provisioning of new staff or service accounts
+level: low
+---
+title: User Added to Privileged Group
+id: 0a2669f9-699e-4c22-9431-10dcf7475056
+status: stable
+description: An account was added to a group that grants administrative rights (sudo, wheel, adm, root, docker, lxd).
+author: Vigil
+tags:
+    - attack.persistence
+    - attack.privilege-escalation
+    - attack.t1098
+logsource:
+    product: linux
+detection:
+    selection:
+        event.action: group_member_added
+        group.name:
+            - sudo
+            - wheel
+            - admin
+            - adm
+            - root
+            - docker
+            - lxd
+            - shadow
+    condition: selection
+level: high
+---
+title: Failed su to Root
+id: 6d5c5121-4b07-40f8-9e06-515bc350c1e3
+status: stable
+description: A user failed to switch to the root account with su.
+author: Vigil
+tags:
+    - attack.privilege-escalation
+    - attack.t1110
+logsource:
+    product: linux
+detection:
+    selection:
+        event.action: su_failure
+        user.target.name: root
+    condition: selection
+level: low
+---
+title: Crontab Replaced
+id: e4b599d8-d364-49f0-aa4e-4f1328b0f26c
+status: stable
+description: A user's crontab was replaced or deleted. Cron jobs are a common persistence mechanism.
+author: Vigil
+tags:
+    - attack.persistence
+    - attack.t1053.003
+logsource:
+    product: linux
+    service: cron
+detection:
+    selection:
+        event.action: crontab_modified
+    condition: selection
+falsepositives:
+    - Configuration management tools
+level: low

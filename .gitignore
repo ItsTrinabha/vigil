@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+var/
+lab/logs/*
+!lab/logs/.gitkeep

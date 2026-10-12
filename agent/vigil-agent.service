@@ -1,0 +1,20 @@
+[Unit]
+Description=Vigil SIEM log collection agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/vigil-agent/vigil_agent.py --config /etc/vigil/agent.ini
+Restart=always
+RestartSec=5
+# Needs root to read /var/log/auth.log, the audit log and /proc of every process.
+User=root
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/vigil-agent
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
